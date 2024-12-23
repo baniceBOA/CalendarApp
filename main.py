@@ -1,7 +1,7 @@
 from kivy.lang import Builder
 from kivymd.app import MDApp, App
 from kivymd.uix.pickers import MDDatePicker
-from kivy.graphics import Color, Ellipse, Line
+from kivy.graphics import Color, Ellipse, Line, Rectangle
 from kivymd.uix.list import OneLineListItem
 from kivy.properties import StringProperty, BooleanProperty, NumericProperty, ListProperty
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -58,9 +58,13 @@ MDScreen:
             font_size:self.parent.children[1].height-dp(20)
             pos_hint:{'top':0.98, 'center_x':0.1}
         MDDropDownItem:
+            on_release:app.show_years(self)
+            id:year_label
+            pos_hint:{'top':0.985, 'center_x':0.3}
+        MDDropDownItem:
             on_release:app.show_months(self)
             id:month_label
-            pos_hint:{'top':0.985, 'center_x':0.3}
+            pos_hint:{'top':0.985, 'center_x':0.5}
             
     CalendarView:
         pos_hint:{'top':0.9}
@@ -92,6 +96,7 @@ MDScreen:
             md_bg_color:app.theme_cls.primary_color
             radius:[dp(25),dp(25),0,0]
             MDBottomSheetDragHandleTitle:
+                id:bottom_title
                 text:'Events'
                 adaptive_height:True
                 bold:True
@@ -123,9 +128,23 @@ MDScreen:
 '''
 def get_month_name(month_int):
     return calendar.month_name[month_int]
-def get_day_name(year, month, day_int):
-    date = datetime(year, month, day_int)
     
+def get_day_name(year, month, day_int):
+    if day_int > 0:
+        date = datetime(year, month, day_int)
+        day_name = date.strftime('%a')
+        return day_name
+    else:
+        return 'Not a day in this month'
+def check_if_today( year, month, day):
+    if day == 0:
+        return False
+    else:
+        today = datetime.today()
+        if today.year == year and today.month == month and today.day == day:
+            return True
+        else:
+            return False
     
 
 class CustomLabel(CircularRippleBehavior, ButtonBehavior, MDLabel):
@@ -139,8 +158,14 @@ class CustomLabel(CircularRippleBehavior, ButtonBehavior, MDLabel):
         Clock.schedule_once(self.update, 1/10)
     def on_release(self, *args):
         app = App.get_running_app()
-        
+        Clock.schedule_once(self.show_selection, 1/10)
         app.open_bottomsheet(self)
+    def show_selection(self, interval):
+        app = App.get_running_app()
+        with self.canvas.before:
+            Color(rgba=app.theme_cls.primary_dark)
+            Rectangle(pos=self.pos,size=self.size)
+         
     
         
     def update(self, interval):
@@ -180,7 +205,7 @@ class CalendarLayout(MDGridLayout):
     year = NumericProperty(_today.year-1)
     month = NumericProperty(_today.month)
     def on_year(self, instance, value):
-        Clock.schedule_once(self.update_layout, 1.8)
+        Clock.schedule_once(self.update_layout, 0.2)
         
     def on_month(self, instance, value):
         Clock.schedule_once(self.update_layout, 0.2)
@@ -192,19 +217,16 @@ class CalendarLayout(MDGridLayout):
         app = App.get_running_app()
         dates_of_month = calendar.Calendar().itermonthdays(year, month)
         app.root.ids.month_label.text = calendar.month_name[month]
+        app.root.ids.year_label.text =str(year)
         if self.children[:]:
             self.clear_widgets()
         for date in dates_of_month:
-            self.add_widget(CustomLabel(text=str(date) if not date==0 else '', today=self.check_if_today(year, month, date)))
-    def check_if_today(self, year, month, day):
-        if day == 0:
-            return False
-        else:
-            today = datetime.today()
-            if today.year == year and today.month == month and today.day == day:
-                return True
-            else:
-                return False
+            self.add_widget(CustomLabel(text=str(date) if not date==0 else '', 
+                                            year=year,
+                                            month=month,
+                                            day=date,
+                                            today=check_if_today(year, month, date)))
+    
     
 class CalendarApp(MDApp):
     prev_pos = ListProperty([0,0])
@@ -216,21 +238,44 @@ class CalendarApp(MDApp):
                                             'text':str(i),
                                             'on_release':lambda x=f'{i}':self.set_month(x)
                                         } for i in month_name]
+                                        
         self.root.ids.calendar_layout.year = 2024
+        self.year_items = [{  'viewclass':'OneLineListItem',
+                                            'text':str(i),
+                                            'on_release':lambda x=f'{i}':self.set_year(x)
+                                        } for i in range(1990,2030)]
     def show_months(self, instance):
        self.menu = MDDropdownMenu(
                        items=self.menu_items,
                        width_mult=4  )  
        self.menu.caller = instance
        self.menu.open()
+    def show_years(self, instance):
+        self.menu_year = MDDropdownMenu(
+                                           items=self.year_items,
+                                           width_mult=3
+       )
+        self.menu_year.caller = instance
+        self.menu_year.open()
+       
+    def set_year(self, year):
+       self.root.ids.calendar_layout.year = int(year)
+       self.menu_year.dismiss()
+       
+       
     def set_month(self, name):
         months = list(calendar.month_name)
         self.root.ids.calendar_layout.month = months.index(name)
         self.menu.dismiss()
+        
     def open_bottomsheet(self, instance):
         event_list = instance.event_list
         event_container = self.root.ids.event_list
         event_container.clear_widgets()
+        handle_title = self.root.ids.bottom_title
+        handle_title.font_size = 34
+        handle_title.text = 'Today'if check_if_today(instance.year, instance.month, instance.day) else f'{instance.day} {get_day_name(instance.year, instance.month, instance.day)}, {get_month_name(instance.month)} {instance.year} '
+        
         for event in event_list:
             event_container.add_widget(OneLineListItem(text=str(event)))
         self.bottomsheet = self.root.ids.bottom_sheet
@@ -238,6 +283,7 @@ class CalendarApp(MDApp):
         self.bottomsheet.open()
     def close_bottomsheet(self):
         self.bottomsheet.dismiss()
+        
     def move_bottomsheet(self, instance, touch):
        bottom_sheet = self.root.ids.bottom_sheet
        current_pos = (touch.ox,touch.oy)
