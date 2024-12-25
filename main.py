@@ -10,7 +10,9 @@ from kivymd.uix.screen import MDScreen
 from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.bottomsheet import MDBottomSheet
 from kivymd.uix.menu import MDDropdownMenu
-from kivy.uix.behaviors import ButtonBehavior, TouchRippleBehavior
+from kivy.uix.behaviors import FocusBehavior, ButtonBehavior, TouchRippleBehavior, CompoundSelectionBehavior
+from kivy.uix.recycleview.layout import LayoutSelectionBehavior
+from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivymd.uix.behaviors import CircularRippleBehavior, ScaleBehavior
 from kivy.clock import Clock
 from datetime import datetime
@@ -121,10 +123,6 @@ MDScreen:
                     
             
     
-    
-            
-        
-    
 '''
 def get_month_name(month_int):
     return calendar.month_name[month_int]
@@ -135,7 +133,7 @@ def get_day_name(year, month, day_int):
         day_name = date.strftime('%a')
         return day_name
     else:
-        return 'Not a day in this month'
+        return ''
 def check_if_today( year, month, day):
     if day == 0:
         return False
@@ -147,27 +145,19 @@ def check_if_today( year, month, day):
             return False
     
 
-class CustomLabel(CircularRippleBehavior, ButtonBehavior, MDLabel):
+    
+class CustomLabel(CircularRippleBehavior, MDLabel):
+    index = None
     today = BooleanProperty(False)
     year = NumericProperty()
     month = NumericProperty()
     day = NumericProperty()
     event_list = ListProperty(['Happy Birthay','Mashujaa Day'])
     
+    
     def on_today(self, instance, value):
         Clock.schedule_once(self.update, 1/10)
-    def on_release(self, *args):
-        app = App.get_running_app()
-        Clock.schedule_once(self.show_selection, 1/10)
-        app.open_bottomsheet(self)
-    def show_selection(self, interval):
-        app = App.get_running_app()
-        with self.canvas.before:
-            Color(rgba=app.theme_cls.primary_dark)
-            Rectangle(pos=self.pos,size=self.size)
-         
     
-        
     def update(self, interval):
         app = App.get_running_app()
         if self.today:
@@ -200,10 +190,47 @@ class TextIconButton(TouchRippleBehavior, ButtonBehavior, MDBoxLayout):
 class CalendarView(MDBoxLayout):
     pass
     
-class CalendarLayout(MDGridLayout):
+class CalendarLayout(FocusBehavior, CompoundSelectionBehavior, MDGridLayout):
     _today = datetime.today()
     year = NumericProperty(_today.year-1)
     month = NumericProperty(_today.month)
+    def add_widget(self, widget,*args, **kwargs):
+        widget.bind(on_touch_down=self.label_touch_down, on_touch_up=self.label_touch_up)
+        return super().add_widget(widget, *args, **kwargs)
+        
+    def select_node(self, node):
+        app = App.get_running_app()
+        if node.today:
+            pass
+        else:
+            node.md_bg_color = app.theme_cls.primary_light
+        return super().select_node(node)
+        
+    def deselect_node(self, node):
+        
+        if node.today:
+            pass
+        else:
+            node.md_bg_color=[1,1,1,0.999]   
+        return super().deselect_node(node)
+        
+    def label_touch_down(self, label, touch):
+        app = App.get_running_app()
+        
+        if label.collide_point(*touch.pos):
+            app.open_bottomsheet(label)
+            self.select_with_touch(label, touch)
+            
+        
+    def label_touch_up(self,label, touch):
+        if not label.collide_point(*touch.pos) or self.touch_multiselect:
+            self.deselect_node(label)
+            
+    def on_selected_nodes(self, layout,nodes):
+        
+        print(nodes)
+        
+    
     def on_year(self, instance, value):
         Clock.schedule_once(self.update_layout, 0.2)
         
@@ -231,6 +258,7 @@ class CalendarLayout(MDGridLayout):
 class CalendarApp(MDApp):
     prev_pos = ListProperty([0,0])
     def build(self):
+        self.theme_cls.primary_palette = 'Pink'
         return Builder.load_string(kv)
     def on_start(self):
         month_name = list(calendar.month_name)
@@ -274,25 +302,24 @@ class CalendarApp(MDApp):
         event_container.clear_widgets()
         handle_title = self.root.ids.bottom_title
         handle_title.font_size = 34
-        handle_title.text = 'Today'if check_if_today(instance.year, instance.month, instance.day) else f'{instance.day} {get_day_name(instance.year, instance.month, instance.day)}, {get_month_name(instance.month)} {instance.year} '
+        handle_title.text = 'Today'if check_if_today(instance.year, instance.month, instance.day) else f'{instance.day} {get_day_name(instance.year, instance.month, instance.day)}, {get_month_name(instance.month)[:3]} {instance.year} '
         
         for event in event_list:
             event_container.add_widget(OneLineListItem(text=str(event)))
         self.bottomsheet = self.root.ids.bottom_sheet
-        
+        if instance.day == 0:
+            self.close_bottomsheet()
         self.bottomsheet.open()
     def close_bottomsheet(self):
+        self.root.ids.bottom_title.text = 'Events'
         self.bottomsheet.dismiss()
         
     def move_bottomsheet(self, instance, touch):
        bottom_sheet = self.root.ids.bottom_sheet
        current_pos = (touch.ox,touch.oy)
        delta = current_pos[1]-self.prev_pos[1]
-       print(delta)
        self.prev_pos = (touch.px,touch.py)
        s = (touch.dx,touch.dy)
-       
-       
        if delta < 1:
            if instance.collide_point(*touch.pos):
                self.root.ids.bottom_sheet.pos = (bottom_sheet.pos[0], bottom_sheet.pos[1]+s[0]+15)
@@ -302,10 +329,6 @@ class CalendarApp(MDApp):
             if instance.collide_point(*touch.pos):
                self.root.ids.bottom_sheet.pos = (bottom_sheet.pos[0], bottom_sheet.pos[1]-s[0]-25)
                
-       
-    
-  
-    
     def save_date(self, *args):
         print(args)
     def cancel_date(self, *args):

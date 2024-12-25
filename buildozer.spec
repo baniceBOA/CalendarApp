@@ -9,7 +9,7 @@
 title = CalendarApp
 
 # (str) Package name
-package.name = calendarapp
+package.name = kivymdcalendarapp
 
 # (str) Package domain (needed for android/ios packaging)
 package.domain = com.kivymdcalendarapp
